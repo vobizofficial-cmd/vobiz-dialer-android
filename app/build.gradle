@@ -50,7 +50,7 @@ android {
         def backendUrl = project.findProperty('vobiz.backend.url') ?:
                 (variant.buildType.debuggable
                         ? 'http://10.0.2.2:3000'
-                        : 'https://vobiz-backend-production.up.railway.app')
+                        : 'https://vobiz-dialer-backend.up.railway.app')
         variant.buildConfigField('String', 'VOBIZ_BACKEND_URL', "\"${backendUrl}\"")
     }
 
