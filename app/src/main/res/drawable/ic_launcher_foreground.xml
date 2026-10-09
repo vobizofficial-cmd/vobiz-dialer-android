@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Vobiz V-logo with rounded ends -->
+    <path
+        android:fillColor="#2563EB"
+        android:pathData="M34,34 L46,34 L54,62 L62,34 L74,34 L59,74 C57,78 51,78 49,74 Z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M36,36 L46,36 L54,60 L62,36 L72,36 L58,72 C56,76 52,76 50,72 Z" />
+</vector>
