@@ -60,6 +60,7 @@ object CredentialStore {
     private const val KEY_TRUNK_DOMAIN = "trunk_domain"
     private const val KEY_DIDS = "vobiz_dids"
     private const val KEY_SELECTED_DID = "vobiz_selected_did"
+    private const val KEY_APPLICATION_ID = "vobiz_application_id"
     private const val KEY_CALLER_ID_TYPE = "vobiz_caller_id_type"
     private const val KEY_CALLER_ID_NUMBER = "vobiz_caller_id_number"
     private const val KEY_LOGIN_MODE = "vobiz_login_mode"
@@ -225,6 +226,14 @@ object CredentialStore {
     }
 
     fun getSelectedDid(): String? = getEffectiveCallerId()
+
+    fun saveApplicationId(applicationId: String) {
+        storage().edit().putString(KEY_APPLICATION_ID, applicationId).commit()
+    }
+
+    fun getApplicationId(): String? {
+        return storage().getString(KEY_APPLICATION_ID, null)
+    }
 
     fun saveLoginMode(mode: LoginMode) {
         storage().edit()

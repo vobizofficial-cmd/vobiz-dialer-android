@@ -322,9 +322,8 @@ fun SettingsScreen(
                                 // Update Vobiz Voice Application Answer URL with new callerId if it's a DID
                                 val apiCreds = CredentialStore.getApi()
                                 val sipCreds = CredentialStore.getSip()
-                                val trunkConfig = CredentialStore.getTrunkConfig()
+                                val applicationId = CredentialStore.getApplicationId() ?: "85076776948601220"
                                 if (apiCreds != null && sipCreds != null) {
-                                    val applicationId = "85076776948601220" // Vobiz WebRTC Playground
                                     val currentMode = pendingMode
                                     val newCallerId = when (currentMode) {
                                         is CallerIdMode.Did -> currentMode.number

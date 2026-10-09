@@ -583,7 +583,7 @@ object SipCallController {
 
     private fun remoteNumber(call: Call): String = try {
         // Incoming: the R-URI user is our DID; the caller's number is carried in
-        // the From display name ("919123151351" <sip:+917965850027@...>).
+        // the From display name (e.g. "919123151351" <sip:+91xxxxxxxxxx@...>).
         // Prefer the display name, fall back to the URI username (outgoing).
         val addr = call.remoteAddress
         val display = addr?.displayName?.trim().orEmpty()

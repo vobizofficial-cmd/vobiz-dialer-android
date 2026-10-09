@@ -162,6 +162,7 @@ object VobizProvisioner {
             val trunkResult = findOrCreateOutboundTrunk(auth, tok, onStep)
 
             // Step 9: Save all credentials to CredentialStore
+            CredentialStore.saveApplicationId(applicationId)
             CredentialStore.saveSip(
                 username = endpointUsername,
                 password = endpointPassword,
