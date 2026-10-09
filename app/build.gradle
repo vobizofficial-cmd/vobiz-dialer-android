@@ -1,0 +1,275 @@
+plugins {
+    id 'com.android.application' version '9.4.1'
+    id 'org.jetbrains.kotlin.android' version '2.4.20'
+    id 'org.jetbrains.kotlin.plugin.compose' version '2.4.20'
+    id 'org.jetbrains.kotlin.plugin.serialization' version '2.4.20'
+    id 'com.google.devtools.ksp' version '2.3.12'
+    id 'com.google.gms.google-services' version '4.4.2' apply false
+}
+
+// FCM config: applied only when app/google-services.json is present (download from
+// Firebase Console -> Project Settings -> Android app). Without it the app still
+// builds/runs; FCM push simply stays disabled (see RivoApp guarded init).
+if (file('google-services.json').exists()) {
+    apply plugin: 'com.google.gms.google-services'
+}
+
+def baseVersionCode = 2026092202
+def buildNumber = (System.getenv("BUILD_NUMBER") ?: System.getenv("GITHUB_RUN_NUMBER") ?: "0") as int
+def isPreviewBuild = System.getenv("PREVIEW_BUILD") == "true"
+def baseVersionName = "2.4.5"
+
+// Release signing: keystore.properties (local, gitignored) wins over env vars (CI).
+def keystorePropsFile = rootProject.file('keystore.properties')
+def hasKeystoreProps = keystorePropsFile.exists()
+def hasEnvKeystore = System.getenv("KEYSTORE_PATH") && System.getenv("KEYSTORE_PASSWORD") && System.getenv("KEY_ALIAS") && System.getenv("KEY_PASSWORD")
+
+android {
+    namespace = 'com.grinch.rivo4'
+    compileSdk = 37
+
+    defaultConfig {
+        applicationId = "it.stivy.rivo.personal"
+        minSdk = 31
+        targetSdk = 36
+        versionCode = baseVersionCode + buildNumber
+        versionName = isPreviewBuild ? "${baseVersionName}.${buildNumber}-preview" : baseVersionName
+        buildConfigField 'String', 'SCRCPY_VERSION', '"4.0"'
+        buildConfigField 'String', 'SCRCPY_SERVER_SHA256', '"84924bd564a1eb6089c872c7521f968058977f91f5ff02514a8c74aff3210f3a"'
+        buildConfigField 'String', 'SCRCPY_SERVER_ASSET_NAME', '"scrcpy-server"'
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    }
+
+    // Vobiz push/answer backend, resolved per variant so tokens always reach a
+    // reachable host:
+    //   debuggable builds  -> local backend on the emulator (10.0.2.2:3000)
+    //   non-debuggable     -> Railway production backend
+    // Override any time without code edits:
+    //   ./gradlew -Pvobiz.backend.url=https://<host> installFossDebug
+    applicationVariants.all { variant ->
+        def backendUrl = project.findProperty('vobiz.backend.url') ?:
+                (variant.buildType.debuggable
+                        ? 'http://10.0.2.2:3000'
+                        : 'https://vobiz-backend-production.up.railway.app')
+        variant.buildConfigField('String', 'VOBIZ_BACKEND_URL', "\"${backendUrl}\"")
+    }
+
+    signingConfigs {
+        release {
+            if (hasKeystoreProps) {
+                def props = new Properties()
+                keystorePropsFile.withInputStream { props.load(it) }
+                storeFile = file(props.getProperty('storeFile'))
+                storePassword = props.getProperty('storePassword')
+                keyAlias = props.getProperty('keyAlias')
+                keyPassword = props.getProperty('keyPassword')
+            } else {
+                if (System.getenv("KEYSTORE_PATH")) storeFile = file(System.getenv("KEYSTORE_PATH"))
+                storePassword = System.getenv("KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("KEY_ALIAS")
+                keyPassword = System.getenv("KEY_PASSWORD")
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled = true
+            shrinkResources = true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            if (hasKeystoreProps || hasEnvKeystore) {
+                signingConfig = signingConfigs.release
+            }
+            debuggable = false
+        }
+        debug {
+            applicationIdSuffix = ".debug"
+            resValue "string", "app_name", "Vobiz Personal"
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+
+    kotlin {
+        compilerOptions {
+            jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
+
+            freeCompilerArgs.addAll(
+                "-opt-in=androidx.compose.material3.ExperimentalMaterial3ExpressiveApi",
+                "-opt-in=androidx.compose.material3.ExperimentalMaterial3Api"
+            )
+        }
+    }
+
+    buildFeatures {
+        compose = true
+        aidl = true
+        buildConfig = true
+    }
+
+    androidResources {
+        generateLocaleConfig = true
+        // Personal edition ships the two fully maintained locales. Upstream translations stay in source.
+        localeFilters += ["en", "it"]
+    }
+
+    splits {
+        abi {
+            enable = true
+            reset()
+            // arm64 devices + emulator (x86_64). No 32-bit x86 (TVs) - minSdk 31 has none.
+            include "arm64-v8a", "armeabi-v7a", "x86_64"
+            universalApk false
+        }
+    }
+
+    bundle {
+        language {
+            enableSplit = true
+        }
+        density {
+            enableSplit = true
+        }
+        abi {
+            enableSplit = true
+        }
+    }
+
+    flavorDimensions "distribution"
+    productFlavors {
+        play {
+            dimension "distribution"
+            isDefault = false
+        }
+        cloud {
+            dimension "distribution"
+        }
+        foss {
+            dimension "distribution"
+            isDefault = true
+        }
+    }
+
+    sourceSets {
+        cloud.java.srcDirs += ['src/google/java', 'src/foss/java/com/grinch/rivo4/view/components/ad']
+        play.java.srcDirs += ['src/google/java']
+    }
+
+    applicationVariants.all { variant ->
+        variant.outputs.all { output ->
+            def abi = output.getFilter(com.android.build.OutputFile.ABI)
+            if (abi) {
+                outputFileName = "VobizDialer-${variant.versionName}-${variant.flavorName}-${abi}.apk"
+            } else {
+                outputFileName = "VobizDialer-${variant.versionName}-${variant.flavorName}.apk"
+            }
+        }
+    }
+}
+
+afterEvaluate {
+    tasks.matching { it.name.startsWith("bundle") && it.name.endsWith("Release") }.configureEach { task ->
+        task.doLast {
+            def outDir = layout.buildDirectory.dir("outputs/bundle/${task.name.replace('bundle', '').uncapitalize()}").get().asFile
+            if (outDir.exists()) {
+                outDir.listFiles()?.each { file ->
+                    if (file.name.endsWith(".aab") && !file.name.contains("VobizDialer")) {
+                        file.renameTo(new File(outDir, "VobizDialer-${android.defaultConfig.versionName}-${task.name.replace('bundle', '').replace('Release', '').uncapitalize()}.aab"))
+                    }
+                }
+            }
+        }
+    }
+
+    // Prevent Windows java.nio.file.FileAlreadyExistsException during KSP compilation
+    tasks.matching { it.name.startsWith("ksp") && it.name.endsWith("Kotlin") }.configureEach { task ->
+        task.doFirst {
+            def variantName = task.name.substring(3, task.name.length() - 6).uncapitalize()
+            def kspGenDir = layout.buildDirectory.dir("generated/ksp/${variantName}").get().asFile
+            if (kspGenDir.exists()) {
+                project.delete(kspGenDir)
+            }
+        }
+    }
+}
+
+dependencies {
+    // LibLinphone SIP engine (hosted on download.linphone.org, not Maven Central)
+    // 5.5.24: first stable line with 16 KB-aligned native libs (Play requirement since Nov 2025).
+    implementation 'org.linphone:linphone-sdk-android:5.5.24'
+    implementation 'androidx.security:security-crypto:1.1.0'
+    cloudImplementation 'com.google.android.gms:play-services-auth:22.0.0'
+    playImplementation 'com.google.android.gms:play-services-auth:22.0.0'
+    implementation 'com.squareup.okhttp3:okhttp:5.5.0'
+    testImplementation 'com.squareup.okhttp3:mockwebserver:5.5.0'
+    testImplementation 'org.json:json:20240303'
+
+    implementation platform('androidx.compose:compose-bom:2026.09.00')
+    implementation 'androidx.compose.ui:ui'
+    implementation 'androidx.compose.material3:material3:1.5.0-alpha29'
+    implementation 'androidx.graphics:graphics-shapes:1.1.0'
+    implementation 'androidx.activity:activity-compose'
+    implementation 'androidx.compose.foundation:foundation'
+    implementation 'androidx.compose.ui:ui-graphics'
+    implementation 'androidx.compose.material:material-icons-extended'
+
+    implementation platform('com.google.firebase:firebase-bom:33.0.0')
+    implementation 'com.google.firebase:firebase-messaging-ktx'
+    implementation 'com.google.firebase:firebase-auth-ktx'
+
+    implementation 'androidx.core:core-ktx:1.19.1'
+    implementation 'androidx.core:core-splashscreen:1.2.0'
+    implementation 'androidx.lifecycle:lifecycle-runtime-ktx:2.11.0'
+    implementation 'androidx.lifecycle:lifecycle-viewmodel-compose:2.11.0'
+
+    implementation 'androidx.navigation:navigation-compose:2.10.2'
+    implementation 'androidx.preference:preference-ktx:1.2.1'
+    implementation 'androidx.biometric:biometric:1.2.0-alpha05'
+    implementation 'org.jetbrains.kotlinx:kotlinx-serialization-json:1.11.0'
+
+    implementation 'io.github.raamcosta.compose-destinations:core:2.3.0'
+    ksp 'io.github.raamcosta.compose-destinations:ksp:2.3.0'
+
+    implementation 'com.google.accompanist:accompanist-permissions:0.37.3'
+
+    implementation 'dev.rikka.shizuku:api:13.1.5'
+    implementation 'dev.rikka.shizuku:provider:13.1.5'
+
+    implementation platform("io.insert-koin:koin-bom:4.2.2")
+    implementation "io.insert-koin:koin-android"
+    implementation "io.insert-koin:koin-androidx-compose"
+
+    def room_version = "2.8.5"
+    implementation "androidx.room:room-runtime:$room_version"
+    implementation "androidx.room:room-ktx:$room_version"
+    ksp "androidx.room:room-compiler:$room_version"
+
+    implementation "io.coil-kt:coil-compose:2.7.0"
+    implementation 'com.google.zxing:core:3.5.4'
+
+    testImplementation 'junit:junit:4.13.2'
+    testImplementation 'org.jetbrains.kotlinx:kotlinx-coroutines-test:1.11.0'
+    androidTestImplementation 'androidx.test.ext:junit:1.3.0'
+    androidTestImplementation 'androidx.test.espresso:espresso-core:3.7.0'
+    androidTestImplementation platform('androidx.compose:compose-bom:2026.09.00')
+    androidTestImplementation 'androidx.compose.ui:ui-test-junit4'
+    debugImplementation 'androidx.compose.ui:ui-test-manifest'
+
+    debugImplementation 'androidx.compose.ui:ui-tooling'
+}
+
+// Pinned ShizuCallRecorder 1.3.3 server. Verify on EVERY build, including cached assets.
+def scrcpyAsset = layout.projectDirectory.file('src/main/assets/scrcpy-server')
+tasks.register('verifyScrcpyServer') {
+    inputs.file(scrcpyAsset)
+    doLast {
+        def actual = java.security.MessageDigest.getInstance('SHA-256').digest(scrcpyAsset.asFile.bytes).encodeHex().toString()
+        if (actual != '84924bd564a1eb6089c872c7521f968058977f91f5ff02514a8c74aff3210f3a') {
+            throw new GradleException('scrcpy-server 4.0 integrity check failed. Run scripts/fetch-scrcpy.sh.')
+        }
+    }
+}
+tasks.named('preBuild').configure { dependsOn 'verifyScrcpyServer' }

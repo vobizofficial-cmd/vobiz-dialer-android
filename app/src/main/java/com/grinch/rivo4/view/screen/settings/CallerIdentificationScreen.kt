@@ -1,0 +1,347 @@
+package com.grinch.rivo4.view.screen.settings
+
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.ErrorOutline
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.unit.dp
+import com.grinch.rivo4.R
+import com.grinch.rivo4.controller.identification.CallerIdentification
+import com.grinch.rivo4.controller.identification.CallerLabel
+import com.grinch.rivo4.controller.identification.ProviderStatus
+import com.grinch.rivo4.controller.identification.messageResource
+import com.ramcosta.composedestinations.annotation.Destination
+import com.ramcosta.composedestinations.annotation.RootGraph
+import com.ramcosta.composedestinations.navigation.DestinationsNavigator
+import kotlinx.coroutines.launch
+import org.koin.compose.koinInject
+
+@Composable
+fun rememberCallerLabel(number: String): CallerLabel? {
+    val repository = koinInject<CallerIdentification>()
+    val revision by repository.revision.collectAsState()
+    // Local resolution only. No network from recomposition or history scrolling.
+    LaunchedEffect(number) { repository.local(number) }
+    return remember(number, revision) { repository.label(number) }
+}
+
+@Composable
+fun CallerProvenance(label: CallerLabel?) {
+    val repository = koinInject<CallerIdentification>()
+    val uriHandler = androidx.compose.ui.platform.LocalUriHandler.current
+    if (label != null) {
+        Text(repository.source(label), style = MaterialTheme.typography.labelSmall)
+        if (label.source == "google") {
+            (listOf("Google Maps" to label.url) + label.credits).filter { it.second.startsWith("https://") }.forEach { (name, url) ->
+                TextButton(onClick = { runCatching { uriHandler.openUri(url) } }) { Text(name) }
+            }
+        }
+    }
+}
+
+@Composable
+fun CallerActions(number: String, expanded: Boolean = false) {
+    val repository = koinInject<CallerIdentification>()
+    var open by remember(number) { mutableStateOf(false) }
+    if (expanded) {
+        FilledTonalButton(
+            onClick = {
+                repository.identify(number, refresh = true)
+                open = true
+            },
+            modifier = Modifier.padding(top = 8.dp).heightIn(min = 48.dp),
+            shape = RoundedCornerShape(16.dp),
+            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp)
+        ) {
+            Image(
+                painter = painterResource(R.drawable.ic_google_places),
+                contentDescription = stringResource(R.string.caller_google_places_logo),
+                modifier = Modifier.size(24.dp)
+            )
+            Spacer(Modifier.width(10.dp))
+            Text(
+                text = stringResource(R.string.caller_google_search_number),
+                fontWeight = FontWeight.SemiBold
+            )
+        }
+    } else {
+        IconButton(onClick = { open = true }, modifier = Modifier.size(40.dp)) {
+            Icon(Icons.Default.Search, contentDescription = stringResource(R.string.caller_actions), modifier = Modifier.size(22.dp))
+        }
+    }
+    if (open) CallerEditor(number, onDismiss = { open = false })
+}
+
+@Composable
+private fun CallerEditor(initialNumber: String, onDismiss: () -> Unit) {
+    val repository = koinInject<CallerIdentification>()
+    val context = LocalContext.current
+    var number by remember { mutableStateOf(initialNumber) }
+    var name by remember { mutableStateOf(repository.customNames()[repository.normalize(initialNumber)].orEmpty()) }
+    var invalid by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+    var openingContact by remember { mutableStateOf(false) }
+    val label = rememberCallerLabel(number)
+    val revision by repository.revision.collectAsState()
+    val lookupState = remember(number, revision) { repository.lookupState(number) }
+    val candidate = remember(number, revision) { repository.googleCandidate(number) }
+    AlertDialog(onDismissRequest = onDismiss, title = { Text(stringResource(R.string.caller_actions)) }, text = {
+        Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedTextField(number, { number = it }, label = { Text(stringResource(R.string.caller_number)) }, singleLine = true)
+            Text(repository.display(label) ?: number)
+            CallerProvenance(label)
+            when {
+                lookupState == R.string.caller_searching -> GoogleLookupStatusCard(
+                    title = stringResource(R.string.caller_google_searching),
+                    message = stringResource(R.string.caller_google_searching_message),
+                    icon = { CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp) }
+                )
+                candidate?.name != null -> GoogleLookupStatusCard(
+                    title = stringResource(R.string.caller_google_found_title),
+                    message = candidate.name,
+                    icon = {
+                        Image(
+                            painter = painterResource(R.drawable.ic_google_places),
+                            contentDescription = stringResource(R.string.caller_google_places_logo),
+                            modifier = Modifier.size(28.dp)
+                        )
+                    },
+                    emphasized = true
+                ) { CallerProvenance(candidate) }
+                lookupState == R.string.caller_search_no_match -> GoogleLookupStatusCard(
+                    title = stringResource(R.string.caller_google_no_result_title),
+                    message = stringResource(R.string.caller_search_no_match),
+                    icon = { Icon(Icons.Default.Info, null, modifier = Modifier.size(28.dp)) }
+                )
+                lookupState != null && lookupState !in setOf(
+                    R.string.caller_search_contact,
+                    R.string.caller_search_custom
+                ) -> GoogleLookupStatusCard(
+                    title = stringResource(R.string.caller_google_error_title),
+                    message = stringResource(lookupState),
+                    icon = { Icon(Icons.Default.ErrorOutline, null, modifier = Modifier.size(28.dp)) }
+                )
+            }
+
+            FilledTonalButton(
+                onClick = { repository.identify(number, refresh = true) },
+                enabled = repository.option("online") && repository.option("google") && lookupState != R.string.caller_searching,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Icon(Icons.Default.Search, null, modifier = Modifier.size(20.dp))
+                Spacer(Modifier.width(8.dp))
+                Text(stringResource(if (lookupState == R.string.caller_search_no_match) R.string.caller_google_retry else R.string.caller_refresh))
+            }
+
+            HorizontalDivider(Modifier.padding(vertical = 4.dp))
+            Text(stringResource(R.string.caller_personal_name_section), style = MaterialTheme.typography.titleSmall)
+            OutlinedTextField(name, { name = it }, label = { Text(stringResource(R.string.caller_custom)) }, singleLine = true)
+            if (invalid) Text(stringResource(R.string.caller_invalid))
+            if (candidate?.name != null && label?.source in listOf("contact", "custom")) {
+                if (label?.source == "contact") {
+                    TextButton(enabled = !openingContact, onClick = {
+                        val selectedNumber = number
+                        val proposedName = candidate.name
+                        openingContact = true
+                        scope.launch {
+                            try {
+                                val intent = repository.contactEditIntent(selectedNumber, proposedName)
+                                if (intent != null) { context.startActivity(intent); onDismiss() }
+                                else android.widget.Toast.makeText(context, R.string.caller_edit_unavailable, android.widget.Toast.LENGTH_LONG).show()
+                            } catch (_: Exception) {
+                                android.widget.Toast.makeText(context, R.string.caller_edit_unavailable, android.widget.Toast.LENGTH_LONG).show()
+                            } finally { openingContact = false }
+                        }
+                    }) { Text(stringResource(R.string.caller_update_contact)) }
+                    Text(stringResource(R.string.caller_update_review), style = MaterialTheme.typography.bodySmall)
+                }
+            }
+            if (name.isNotBlank()) {
+                TextButton(onClick = { if (repository.setCustom(number, "")) { name = "" } else invalid = true }) {
+                    Text(stringResource(R.string.caller_remove_custom))
+                }
+            }
+            TextButton(onClick = {
+                val intent = android.content.Intent(android.content.Intent.ACTION_INSERT,
+                    android.provider.ContactsContract.Contacts.CONTENT_URI).apply {
+                    putExtra(android.provider.ContactsContract.Intents.Insert.PHONE, number)
+                    putExtra(android.provider.ContactsContract.Intents.Insert.NAME, name.ifBlank { label?.name.orEmpty() })
+                }
+                runCatching { context.startActivity(intent) }
+            }) { Text(stringResource(R.string.contact_add_to_contacts)) }
+        }
+    }, confirmButton = {
+        TextButton(onClick = { if (repository.setCustom(number, name)) onDismiss() else invalid = true }) {
+            Text(stringResource(R.string.caller_save))
+        }
+    }, dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) } })
+}
+
+@Composable
+private fun GoogleLookupStatusCard(
+    title: String,
+    message: String,
+    icon: @Composable () -> Unit,
+    emphasized: Boolean = false,
+    extra: @Composable (() -> Unit)? = null
+) {
+    ElevatedCard(
+        colors = CardDefaults.elevatedCardColors(
+            containerColor = if (emphasized) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.secondaryContainer
+        )
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(16.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            icon()
+            Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Text(title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                Text(
+                    message,
+                    style = if (emphasized) MaterialTheme.typography.titleMedium else MaterialTheme.typography.bodyMedium,
+                    fontWeight = if (emphasized) FontWeight.Bold else FontWeight.Normal
+                )
+                extra?.invoke()
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Destination<RootGraph>
+@Composable
+fun CallerIdentificationScreen(navigator: DestinationsNavigator) {
+    val repository = koinInject<CallerIdentification>()
+    val revision by repository.revision.collectAsState()
+    var editNumber by remember { mutableStateOf<String?>(null) }
+    var clear by remember { mutableStateOf(false) }
+    Scaffold(topBar = {
+        TopAppBar(title = { Text(stringResource(R.string.caller_title)) }, navigationIcon = {
+            IconButton(onClick = { navigator.popBackStack() }) {
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.action_back))
+            }
+        })
+    }) { padding ->
+        Column(Modifier.padding(padding).padding(16.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text(stringResource(R.string.caller_description))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text(stringResource(R.string.caller_online), Modifier.weight(1f))
+                Switch(checked = remember(revision) { repository.option("online") }, onCheckedChange = { repository.toggle("online", it) })
+            }
+            ProviderCard("google", repository)
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Column(Modifier.weight(1f)) {
+                    Text(stringResource(R.string.caller_business_search))
+                    Text(
+                        stringResource(R.string.caller_business_search_summary),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Switch(
+                    checked = remember(revision) { repository.businessSearchEnabled() },
+                    onCheckedChange = repository::setBusinessSearchEnabled,
+                    enabled = repository.option("google") && repository.status("google") == ProviderStatus.CONFIGURED
+                )
+            }
+            HorizontalDivider()
+            Text(stringResource(R.string.caller_manage), style = MaterialTheme.typography.titleMedium)
+            Button(onClick = { editNumber = "" }) { Text(stringResource(R.string.caller_add_custom)) }
+            val names = remember(revision) { repository.customNames().toSortedMap() }
+            names.forEach { (number, name) -> TextButton(onClick = { editNumber = number }) { Text("$name • $number") } }
+            TextButton(onClick = { clear = true }) { Text(stringResource(R.string.caller_clear)) }
+            Text(stringResource(R.string.caller_google_policy), style = MaterialTheme.typography.bodySmall)
+        }
+    }
+    editNumber?.let { CallerEditor(it) { editNumber = null } }
+    if (clear) AlertDialog(onDismissRequest = { clear = false }, title = { Text(stringResource(R.string.caller_clear)) },
+        text = { Text(stringResource(R.string.caller_clear_confirm)) }, confirmButton = {
+            TextButton(onClick = { repository.clearCache(); clear = false }) { Text(stringResource(R.string.caller_clear)) }
+        }, dismissButton = { TextButton(onClick = { clear = false }) { Text(stringResource(R.string.action_cancel)) } })
+}
+
+@Composable
+private fun ProviderCard(provider: String, repository: CallerIdentification) {
+    val revision by repository.revision.collectAsState()
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var expanded by remember { mutableStateOf(false) }
+    // Deliberately not rememberSaveable: credentials never enter saved instance state.
+    var key by remember { mutableStateOf("") }
+    var remove by remember { mutableStateOf(false) }
+    var busy by remember { mutableStateOf(false) }
+    var localError by remember { mutableStateOf(false) }
+    val state = remember(revision) { repository.status(provider) }
+    LaunchedEffect(expanded) {
+        if (expanded) key = try { repository.apiKey(provider) } catch (_: Exception) { localError = true; "" }
+        else { key = "" }
+    }
+    val statusText = state.messageResource()
+    Card(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            TextButton(onClick = { expanded = !expanded }) {
+                Text("Google Places", style = MaterialTheme.typography.titleMedium)
+            }
+            Text(stringResource(R.string.api_google_description))
+            Text(stringResource(statusText), style = MaterialTheme.typography.bodyMedium)
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text(stringResource(R.string.caller_google), Modifier.weight(1f))
+                Switch(checked = remember(revision) { repository.option(provider) }, onCheckedChange = { repository.toggle(provider, it) }, enabled = !busy)
+            }
+            if (expanded) {
+                ProviderKeyInput(key, { key = it; localError = false },
+                    stringResource(R.string.api_google_key), !busy)
+                Button(enabled = !busy && key.isNotBlank(), onClick = {
+                    busy = true
+                    scope.launch { try { repository.saveAndVerify(provider, key) } finally { busy = false } }
+                }) { Text(stringResource(R.string.api_verify)) }
+                TextButton(onClick = {
+                    if (!com.grinch.rivo4.controller.identification.ProviderLinks.open(context, provider))
+                        android.widget.Toast.makeText(context, R.string.api_no_browser, android.widget.Toast.LENGTH_LONG).show()
+                }) { Text(stringResource(R.string.api_get_key)) }
+                Text(stringResource(R.string.api_google_help), style = MaterialTheme.typography.bodySmall)
+                Text(stringResource(R.string.api_storage_help), style = MaterialTheme.typography.bodySmall)
+                TextButton(enabled = !busy, onClick = { remove = true }) { Text(stringResource(R.string.api_remove)) }
+                if (localError) Text(stringResource(R.string.api_error))
+            }
+        }
+    }
+    if (remove) AlertDialog(onDismissRequest = { remove = false }, title = { Text(stringResource(R.string.api_remove)) },
+        text = { Text(stringResource(R.string.api_remove_confirm)) }, confirmButton = {
+            TextButton(onClick = {
+                remove = false; busy = true
+                scope.launch {
+                    try { repository.removeKey(provider); key = "" }
+                    catch (_: Exception) { localError = true }
+                    finally { busy = false }
+                }
+            }) { Text(stringResource(R.string.api_remove)) }
+        }, dismissButton = { TextButton(onClick = { remove = false }) { Text(stringResource(R.string.action_cancel)) } })
+}
+
+@Composable
+internal fun ProviderKeyInput(value: String, onValueChange: (String) -> Unit, label: String, enabled: Boolean) {
+    var visible by remember { mutableStateOf(false) }
+    OutlinedTextField(value, onValueChange, singleLine = true, enabled = enabled,
+        label = { Text(label) },
+        visualTransformation = if (visible) androidx.compose.ui.text.input.VisualTransformation.None else PasswordVisualTransformation(),
+        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(autoCorrectEnabled = false, keyboardType = androidx.compose.ui.text.input.KeyboardType.Password),
+        trailingIcon = { TextButton(onClick = { visible = !visible }) {
+            Text(stringResource(if (visible) R.string.api_hide else R.string.api_show))
+        } }, modifier = Modifier.fillMaxWidth())
+}
