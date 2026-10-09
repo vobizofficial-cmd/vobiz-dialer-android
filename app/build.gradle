@@ -17,7 +17,7 @@ if (file('google-services.json').exists()) {
 def baseVersionCode = 2026092202
 def buildNumber = (System.getenv("BUILD_NUMBER") ?: System.getenv("GITHUB_RUN_NUMBER") ?: "0") as int
 def isPreviewBuild = System.getenv("PREVIEW_BUILD") == "true"
-def baseVersionName = "2.4.5"
+def baseVersionName = "1.0.0"
 
 // Release signing: keystore.properties (local, gitignored) wins over env vars (CI).
 def keystorePropsFile = rootProject.file('keystore.properties')
