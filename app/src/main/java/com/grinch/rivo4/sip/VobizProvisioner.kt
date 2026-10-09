@@ -363,9 +363,15 @@ object VobizProvisioner {
             val theirs = URLDecoder.decode(
                 params.first { it.first == "endpoint" }.second, "UTF-8"
             )
-            if (theirs == sipUri) return null // already dials this login's endpoint
+            if (theirs == sipUri && params.any { it.first == "callerId" && URLDecoder.decode(it.second, "UTF-8") == (did ?: "") }) {
+                return null // already correct endpoint and callerId
+            }
             var query = params.joinToString("&") { (k, v) ->
-                if (k == "endpoint") "$k=${URLEncoder.encode(sipUri, "UTF-8")}" else "$k=$v"
+                when (k) {
+                    "endpoint" -> "$k=${URLEncoder.encode(sipUri, "UTF-8")}"
+                    "callerId" -> if (did != null) "$k=${URLEncoder.encode(did, "UTF-8")}" else "$k=$v"
+                    else -> "$k=$v"
+                }
             }
             if (did != null && params.none { it.first == "callerId" }) {
                 query += "&callerId=${URLEncoder.encode(did, "UTF-8")}"
@@ -381,6 +387,36 @@ object VobizProvisioner {
             return buildAnswerUrl(did, sipUri)
         }
         return null
+    }
+
+    /**
+     * Updates the Voice Application's Answer URL with a new callerId (DID).
+     * Called when user switches the selected DID in settings.
+     * Returns true if update was performed, false if no change needed or failed.
+     */
+    fun updateAnswerUrlCallerId(
+        authId: String,
+        token: String,
+        applicationId: String,
+        newCallerId: String,
+        sipUri: String,
+        onStep: (String) -> Unit
+    ): Boolean {
+        return try {
+            val application = VobizApi.getApplication(authId, token, applicationId)
+            val newUrl = repointedAnswerUrl(application.answerUrl, newCallerId, sipUri)
+            if (newUrl != null) {
+                VobizApi.updateApplicationAnswerUrl(authId, token, applicationId, newUrl)
+                onStep("Answer URL updated for callerId: $newCallerId")
+                true
+            } else {
+                onStep("Answer URL already correct for callerId: $newCallerId")
+                false
+            }
+        } catch (e: Exception) {
+            onStep("Failed to update Answer URL: ${e.message}")
+            false
+        }
     }
 
     private fun buildAnswerUrl(did: String?, sipUri: String): String {

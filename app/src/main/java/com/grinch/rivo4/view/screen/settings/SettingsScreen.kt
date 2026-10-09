@@ -33,11 +33,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import com.grinch.rivo4.R
+import android.util.Log
 import com.grinch.rivo4.auth.CallerIdMode
 import com.grinch.rivo4.auth.CredentialStore
 import com.grinch.rivo4.controller.util.PreferenceManager
 import com.grinch.rivo4.controller.util.getAppVersion
 import com.grinch.rivo4.sip.LinphoneService
+import com.grinch.rivo4.sip.VobizProvisioner
 import com.grinch.rivo4.sip.VobizRegistrationState
 import com.grinch.rivo4.view.components.RivoDivider
 import com.grinch.rivo4.view.components.RivoExpressiveCard
@@ -317,6 +319,31 @@ fun SettingsScreen(
                             onClick = {
                                 CredentialStore.saveCallerIdMode(pendingMode)
                                 savedMode = pendingMode
+                                // Update Vobiz Voice Application Answer URL with new callerId if it's a DID
+                                val apiCreds = CredentialStore.getApi()
+                                val sipCreds = CredentialStore.getSip()
+                                val trunkConfig = CredentialStore.getTrunkConfig()
+                                if (apiCreds != null && sipCreds != null) {
+                                    val applicationId = "85076776948601220" // Vobiz WebRTC Playground
+                                    val currentMode = pendingMode
+                                    val newCallerId = when (currentMode) {
+                                        is CallerIdMode.Did -> currentMode.number
+                                        is CallerIdMode.Custom -> currentMode.number
+                                        else -> null
+                                    }
+                                    if (newCallerId != null) {
+                                        scope.launch {
+                                            VobizProvisioner.updateAnswerUrlCallerId(
+                                                authId = apiCreds.authId,
+                                                token = apiCreds.authToken,
+                                                applicationId = applicationId,
+                                                newCallerId = newCallerId,
+                                                sipUri = "sip:${sipCreds.username}@${sipCreds.domain}",
+                                                onStep = { msg -> Log.i("VobizProvisioner", msg) }
+                                            )
+                                        }
+                                    }
+                                }
                                 // The outbound auth info is keyed by the From user, so
                                 // re-apply SIP config to register the new mapping.
                                 LinphoneService.reconfigureAndRegister()
