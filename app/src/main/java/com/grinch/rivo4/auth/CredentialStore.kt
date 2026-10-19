@@ -2,6 +2,7 @@ package com.grinch.rivo4.auth
 
 import android.content.Context
 import android.content.SharedPreferences
+import android.util.Log
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 
@@ -300,12 +301,18 @@ object CredentialStore {
      * store has no SIP entry yet, so re-installs over old data keep working.
      */
     private fun migrateLegacyData(context: Context) {
-        if (hasSipCredentials()) return
+        Log.d("CredentialStore", "migrateLegacyData() called, hasSipCredentials=${hasSipCredentials()}")
+        if (hasSipCredentials()) {
+            Log.d("CredentialStore", "migrateLegacyData: already has SIP credentials, skipping migration")
+            return
+        }
         runCatching {
             val legacySip = createPrefs(context, LEGACY_SIP_FILE)
             val username = legacySip.getString("sip_username", "").orEmpty()
             val password = legacySip.getString("sip_password", "").orEmpty()
+            Log.d("CredentialStore", "Legacy SIP check: username.isEmpty=${username.isEmpty()}, password.isEmpty=${password.isEmpty()}")
             if (username.isNotEmpty() && password.isNotEmpty()) {
+                Log.w("CredentialStore", "MIGRATING LEGACY SIP CREDENTIALS: username=$username")
                 saveSip(
                     username = username,
                     password = password,
@@ -319,7 +326,9 @@ object CredentialStore {
                 val legacySession = createPrefs(context, LEGACY_SESSION_FILE)
                 val authId = legacySession.getString("auth_id", "").orEmpty()
                 val authSecret = legacySession.getString("auth_secret", "").orEmpty()
+                Log.d("CredentialStore", "Legacy Session check: authId.isEmpty=${authId.isEmpty()}, authSecret.isEmpty=${authSecret.isEmpty()}")
                 if (authId.isNotEmpty() && authSecret.isNotEmpty()) {
+                    Log.w("CredentialStore", "MIGRATING LEGACY API CREDENTIALS: authId=$authId")
                     saveApi(authId, authSecret)
                 }
             }

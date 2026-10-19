@@ -296,7 +296,7 @@ try {
 
         /** Linphone's Core is not thread-safe for reconfiguration; all config work takes this mutex. */
         private val configMutex = Mutex()
-        private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        private var serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
         fun start(context: Context) {
             val intent = Intent(context, LinphoneService::class.java)
@@ -312,9 +312,14 @@ try {
          *   always results in exactly one (or zero) registrations.
          */
         fun reconfigureAndRegister() {
-            if (CredentialStore.hasSipCredentials()) {
-                _registrationState.value = VobizRegistrationState.Connecting
+            val hasCreds = CredentialStore.hasSipCredentials()
+            Log.i(TAG, "reconfigureAndRegister() called, hasSipCredentials=$hasCreds")
+            if (!hasCreds) {
+                Log.i(TAG, "No SIP credentials - resetting registration state to Failed")
+                _registrationState.value = VobizRegistrationState.Failed("No SIP credentials configured")
+                return
             }
+            _registrationState.value = VobizRegistrationState.Connecting
             serviceScope.launch {
                 configMutex.withLock {
                     val active = sCore
@@ -326,6 +331,14 @@ try {
                     applyConfig()
                 }
             }
+        }
+
+        /** Resets registration state to Idle and cancels any pending registration work. */
+        fun resetRegistrationState() {
+            Log.i(TAG, "resetRegistrationState() called - cancelling serviceScope and clearing to Idle")
+            serviceScope.cancel()
+            serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+            _registrationState.value = VobizRegistrationState.Idle
         }
 
         /** Health updates from [WssRelay]; only applied while relay mode is active. */

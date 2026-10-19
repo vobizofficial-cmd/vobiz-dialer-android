@@ -8,6 +8,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Shapes
 import androidx.compose.material3.toPath
 import androidx.compose.material3.toShape
+import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.ProvidableCompositionLocal
 import androidx.compose.runtime.remember
@@ -198,3 +199,47 @@ fun rememberRivoMorphShape(
     val currentProgress = rememberUpdatedState(progress)
     return remember(morph) { RivoMorphShape(morph) { currentProgress.value.invoke() } }
 }
+
+// New Design System Shapes (VobizShapes)
+object VobizShapes {
+    // Material 3 Expressive radius scale
+    val ExtraSmall = RoundedCornerShape(4.dp)   // xs - badges, chips
+    val Small = RoundedCornerShape(8.dp)        // sm - buttons, inputs
+    val Medium = RoundedCornerShape(12.dp)      // md - cards, dialogs
+    val Large = RoundedCornerShape(16.dp)       // lg - panels, sheets
+    val ExtraLarge = RoundedCornerShape(20.dp)  // xl - modals, drawers
+    val Full = RoundedCornerShape(9999.dp)      // full - pills, avatars
+
+    // Semantic aliases
+    val Card = Medium
+    val Button = Small
+    val Input = Small
+    val Chip = Full
+    val Dialog = Large
+    val BottomSheet = ExtraLarge
+    val Tooltip = Small
+    val FAB = ExtraLarge
+    val NavBar = Large
+}
+
+val VobizShapeScheme = Shapes(
+    extraSmall = VobizShapes.ExtraSmall,
+    small = VobizShapes.Small,
+    medium = VobizShapes.Medium,
+    large = VobizShapes.Large,
+    extraLarge = VobizShapes.ExtraLarge,
+).copy(
+    largeIncreased = VobizShapes.Large,
+    extraLargeIncreased = VobizShapes.ExtraLarge,
+    extraExtraLarge = RoundedCornerShape(24.dp),
+)
+
+@Immutable
+data class VobizShapeTokens(
+    val xs: CornerBasedShape = VobizShapes.ExtraSmall,
+    val sm: CornerBasedShape = VobizShapes.Small,
+    val md: CornerBasedShape = VobizShapes.Medium,
+    val lg: CornerBasedShape = VobizShapes.Large,
+    val xl: CornerBasedShape = VobizShapes.ExtraLarge,
+    val full: CornerBasedShape = VobizShapes.Full,
+)

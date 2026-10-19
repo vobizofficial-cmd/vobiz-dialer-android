@@ -3,6 +3,7 @@ package com.grinch.rivo4
 import android.content.Intent
 import android.os.Bundle
 import android.provider.ContactsContract
+import android.util.Log
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.background
@@ -58,7 +59,9 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
             }
         }
 
-        if (com.grinch.rivo4.auth.CredentialStore.hasSipCredentials()) {
+        val hasSipCreds = com.grinch.rivo4.auth.CredentialStore.hasSipCredentials()
+        Log.d("MainActivity", "onCreate: hasSipCredentials=$hasSipCreds, savedInstanceState=$savedInstanceState")
+        if (hasSipCreds) {
             com.grinch.rivo4.sip.LinphoneService.start(this)
         }
 
@@ -69,6 +72,14 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                 val prefs = koinInject<PreferenceManager>()
                 val transitionStyle = prefs.getInt(PreferenceManager.KEY_TRANSITION_STYLE, 0)
                 var showLogin by remember { mutableStateOf(!com.grinch.rivo4.auth.CredentialStore.hasSipCredentials()) }
+                // Track showLogin changes via derived state
+                var showLoginTracker by remember { mutableStateOf(showLogin) }
+                if (showLogin != showLoginTracker) {
+                    Log.d("MainActivity", "showLogin CHANGED: $showLoginTracker -> $showLogin, hasSipCredentials=${com.grinch.rivo4.auth.CredentialStore.hasSipCredentials()}, stack=${Throwable().stackTrace.take(5).joinToString("\n")}")
+                    showLoginTracker = showLogin
+                }
+                val hasSipCreds = com.grinch.rivo4.auth.CredentialStore.hasSipCredentials()
+                Log.d("MainActivity", "Compose: showLogin=$showLogin, hasSipCredentials=$hasSipCreds, callstack=${Throwable().stackTrace.take(5).joinToString("\n")}")
 
                 if (isAppLocked && prefs.isAppLockEnabled()) {
                     AppLockOverlay(
@@ -76,9 +87,12 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                             isAppLocked = false
                         }
                     )
-                } else if (showLogin) {
+} else if (showLogin) {
                     com.grinch.rivo4.ui.login.LoginScreen(
-                        onLoggedIn = { showLogin = false }
+                        onLoggedIn = {
+                            Log.d("MainActivity", "onLoggedIn callback - setting showLogin=false, hasSipCredentials=${com.grinch.rivo4.auth.CredentialStore.hasSipCredentials()}")
+                            showLogin = false
+                        }
                     )
                 } else {
                     Box(

@@ -19,6 +19,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import java.util.regex.Pattern
 
 class LoginViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -34,6 +35,18 @@ class LoginViewModel(application: Application) : AndroidViewModel(application) {
 
     private val isBusy: Boolean
         get() = _uiState.value is LoginUiState.Validating || _uiState.value is LoginUiState.Registering
+
+    init {
+        Log.d("LoginViewModel", "LoginViewModel created")
+    }
+
+    /** Resets the ViewModel state to Idle - call when login screen is shown after logout. */
+    fun reset() {
+        Log.d("LoginViewModel", "reset() called - clearing state to Idle")
+        _uiState.value = LoginUiState.Idle
+        _step.value = ""
+        retryAction = null
+    }
 
     /**
      * Direct SIP credential login (agent/manual mode). Validates input, persists it
@@ -53,7 +66,7 @@ class LoginViewModel(application: Application) : AndroidViewModel(application) {
         if (isBusy) return
         when (val r = CredentialValidator.validateSip(username.trim(), password, domain.trim(), transport)) {
             is ValidationResult.Invalid -> {
-                _uiState.value = LoginUiState.Failure("${r.field}: ${r.message}")
+                setState(LoginUiState.Failure("${r.field}: ${r.message}"))
                 return
             }
             ValidationResult.Valid -> Unit
@@ -61,7 +74,7 @@ class LoginViewModel(application: Application) : AndroidViewModel(application) {
         val hasTrunkInput = !trunkUsername.isNullOrBlank() || !trunkPassword.isNullOrBlank() || !trunkDomain.isNullOrBlank()
         if (hasTrunkInput) {
             if (trunkUsername.isNullOrBlank() || trunkPassword.isNullOrBlank() || trunkDomain.isNullOrBlank()) {
-                _uiState.value = LoginUiState.Failure("All three trunk fields must be filled, or leave all blank")
+                setState(LoginUiState.Failure("All three trunk fields must be filled, or leave all blank"))
                 return
             }
             CredentialStore.saveTrunkConfig(trunkUsername.trim(), trunkPassword, trunkDomain.trim())
@@ -70,7 +83,7 @@ class LoginViewModel(application: Application) : AndroidViewModel(application) {
             CredentialStore.clearTrunkConfig()
             Log.i("VobizSip", "No trunk config provided - will fall back to registrar")
         }
-        _uiState.value = LoginUiState.Validating
+        setState(LoginUiState.Validating)
         _step.value = ""
         CredentialStore.init(app)
         CredentialStore.saveSip(username.trim(), password, domain.trim(), transport)
@@ -79,7 +92,7 @@ class LoginViewModel(application: Application) : AndroidViewModel(application) {
         if (!authId.isNullOrBlank() && !authToken.isNullOrBlank()) {
             when (val r = CredentialValidator.validateApi(authId.trim(), authToken)) {
                 is ValidationResult.Invalid -> {
-                    _uiState.value = LoginUiState.Failure("API ${r.field}: ${r.message}")
+                    setState(LoginUiState.Failure("API ${r.field}: ${r.message}"))
                     return
                 }
                 ValidationResult.Valid -> CredentialStore.saveApi(authId.trim(), authToken)
@@ -95,10 +108,18 @@ class LoginViewModel(application: Application) : AndroidViewModel(application) {
     fun onAccountLoginClicked(email: String, password: String) {
         if (isBusy) return
         if (email.isBlank() || password.isBlank()) {
-            _uiState.value = LoginUiState.Failure("email: Enter your Vobiz account email and password")
+            setState(LoginUiState.Failure("email: Enter your Vobiz account email and password"))
             return
         }
-        _uiState.value = LoginUiState.Validating
+        if (!EMAIL_PATTERN.matcher(email).matches()) {
+            setState(LoginUiState.Failure("email: Enter a valid email address"))
+            return
+        }
+        if (password.length < 8) {
+            setState(LoginUiState.Failure("password: Password must be at least 8 characters"))
+            return
+        }
+        setState(LoginUiState.Validating)
         _step.value = "Signing in to Vobiz..."
         retryAction = { onAccountLoginClicked(email, password) }
         viewModelScope.launch {
@@ -110,14 +131,25 @@ class LoginViewModel(application: Application) : AndroidViewModel(application) {
             val provision = result.getOrNull()
             when {
                 result.isFailure ->
-                    _uiState.value = LoginUiState.Failure(
+                    setState(LoginUiState.Failure(
                         result.exceptionOrNull()?.message ?: "Login failed"
-                    )
-                provision == null || provision.status != "OK" ->
-                    _uiState.value = LoginUiState.Failure(provision?.status ?: "Provisioning failed")
-                else -> registerAndWait()
+                    ))
+                provision == null ->
+                    setState(LoginUiState.Failure("Provisioning returned no result"))
+                provision.status != "OK" ->
+                    setState(LoginUiState.Failure(provision.status))
+                else -> {
+                    // Provisioning succeeded - credentials are saved in CredentialStore by VobizProvisioner
+                    // Now register with SIP
+                    registerAndWait()
+                }
             }
         }
+    }
+
+    private fun setState(newState: LoginUiState) {
+        Log.d("LoginViewModel", "State change: ${_uiState.value.javaClass.simpleName} -> ${newState.javaClass.simpleName}")
+        _uiState.value = newState
     }
 
     fun onSkipClicked(): Boolean = CredentialStore.hasSipCredentials()
@@ -126,14 +158,14 @@ class LoginViewModel(application: Application) : AndroidViewModel(application) {
         retryAction?.invoke()
     }
 
-    fun onPermissionDenied() {
-        _uiState.value = LoginUiState.Failure(
+fun onPermissionDenied() {
+        setState(LoginUiState.Failure(
             getApplication<Application>().getString(com.grinch.rivo4.R.string.vobiz_permission_mic_required)
-        )
+        ))
     }
 
     private fun registerAndWait() {
-        _uiState.value = LoginUiState.Registering
+        setState(LoginUiState.Registering)
         _step.value = "Starting SIP engine..."
         LinphoneService.start(app)
         // Resets state to Connecting synchronously so the collector below never
@@ -148,14 +180,13 @@ class LoginViewModel(application: Application) : AndroidViewModel(application) {
             when (finalState) {
                 is VobizRegistrationState.Registered -> {
                     _step.value = ""
-                    _uiState.value = LoginUiState.Success
+                    setState(LoginUiState.Success)
                 }
                 is VobizRegistrationState.Failed -> {
-                    _uiState.value = LoginUiState.Failure(RegistrationErrorMapper.map(finalState.reason))
+                    setState(LoginUiState.Failure(RegistrationErrorMapper.map(finalState.reason)))
                 }
                 null -> {
-                    _uiState.value =
-                        LoginUiState.Failure(RegistrationErrorMapper.map("timeout"))
+                    setState(LoginUiState.Failure(RegistrationErrorMapper.map("timeout")))
                 }
                 else -> Unit
             }
@@ -166,5 +197,6 @@ class LoginViewModel(application: Application) : AndroidViewModel(application) {
         // SIP registration timers resolve an unreachable registrar within ~32-64s;
         // 45s keeps the UX bounded while still covering the normal failure path.
         private const val REGISTRATION_TIMEOUT_MS = 45_000L
+        private val EMAIL_PATTERN = Pattern.compile("^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$")
     }
 }

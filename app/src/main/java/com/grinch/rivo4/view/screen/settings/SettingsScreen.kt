@@ -1,4 +1,4 @@
-package com.grinch.rivo4.view.screen.settings
+﻿package com.grinch.rivo4.view.screen.settings
 
 import com.grinch.rivo4.controller.util.RivoText
 import androidx.activity.compose.rememberLauncherForActivityResult

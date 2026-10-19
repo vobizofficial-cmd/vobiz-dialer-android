@@ -6,12 +6,18 @@ import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.border
+import androidx.compose.foundation.background
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -30,8 +36,11 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.clickable
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Email
+import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Message
 import androidx.compose.material.icons.filled.Person
@@ -76,12 +85,33 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.grinch.rivo4.R
 import com.grinch.rivo4.auth.CredentialStore
+import com.grinch.rivo4.view.theme.vobizBackground
+import com.grinch.rivo4.view.theme.vobizBorder
+import com.grinch.rivo4.view.theme.vobizBorderStrong
+import com.grinch.rivo4.view.theme.vobizButtonGhost
+import com.grinch.rivo4.view.theme.vobizButtonGhostBorder
+import com.grinch.rivo4.view.theme.vobizButtonOnPrimary
+import com.grinch.rivo4.view.theme.vobizButtonPrimary
+import com.grinch.rivo4.view.theme.vobizDanger
+import com.grinch.rivo4.view.theme.vobizDangerBg
+import com.grinch.rivo4.view.theme.vobizOnPrimary
+import com.grinch.rivo4.view.theme.vobizPrimary
+import com.grinch.rivo4.view.theme.vobizSuccess
+import com.grinch.rivo4.view.theme.vobizSuccessBg
+import com.grinch.rivo4.view.theme.vobizSurface
+import com.grinch.rivo4.view.theme.vobizSurfaceElevated
+import com.grinch.rivo4.view.theme.vobizSurfaceHover
+import com.grinch.rivo4.view.theme.vobizText
+import com.grinch.rivo4.view.theme.vobizTextDim
+import com.grinch.rivo4.view.theme.vobizWarning
+import com.grinch.rivo4.view.theme.vobizWarningBg
 import kotlinx.coroutines.delay
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -163,20 +193,42 @@ fun LoginScreen(
         if (state is LoginUiState.Success) {
             delay(1200)
             onLoggedIn()
+        } else if (state is LoginUiState.Failure) {
+            delay(4000)
+            viewModel.onRetry()
         }
     }
 
-    val isDark = isSystemInDarkTheme()
-    val bgColor = if (isDark) Color(0xFF0F0F0F) else Color(0xFFF1F5F9)
-    val cardGlassColor = if (isDark) Color(0x33262626) else Color(0xCCFFFFFF)
-    val borderColor = if (isDark) Color(0x33BDBDBD) else Color(0x3394A3B8)
-    val greyAccent = Color(0xFFBDBDBD)
-    val textPrimary = if (isDark) Color(0xFFF8FAFC) else Color(0xFF0F172A)
-    val textSecondary = if (isDark) Color(0xFF94A3B8) else Color(0xFF64748B)
+    // Reset ViewModel state when LoginScreen is shown (e.g., after logout)
+    // This handles the case where ViewModel is retained across Activity recreation
+    LaunchedEffect(Unit) {
+        viewModel.reset()
+    }
+
+    // Theme color accessors
+    val primaryColor = vobizPrimary()
+    val onPrimaryColor = vobizOnPrimary()
+    val surfaceColor = vobizSurface()
+    val surfaceElevatedColor = vobizSurfaceElevated()
+    val surfaceHoverColor = vobizSurfaceHover()
+    val textColor = vobizText()
+    val textDimColor = vobizTextDim()
+    val borderColor = vobizBorder()
+    val borderStrongColor = vobizBorderStrong()
+    val buttonPrimaryColor = vobizButtonPrimary()
+    val buttonOnPrimaryColor = vobizButtonOnPrimary()
+    val buttonGhostColor = vobizButtonGhost()
+    val buttonGhostBorderColor = vobizButtonGhostBorder()
+    val dangerColor = vobizDanger()
+    val dangerBgColor = vobizDangerBg()
+    val successColor = vobizSuccess()
+    val successBgColor = vobizSuccessBg()
+    val warningColor = vobizWarning()
+    val warningBgColor = vobizWarningBg()
 
     Surface(
         modifier = Modifier.fillMaxSize(),
-        color = bgColor
+        color = surfaceColor
     ) {
         Box(
             modifier = Modifier.fillMaxSize(),
@@ -194,13 +246,18 @@ fun LoginScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 18.dp, vertical = 24.dp)
-                        .border(1.dp, borderColor, RoundedCornerShape(32.dp))
                         .verticalScroll(rememberScrollState()),
-                    shape = RoundedCornerShape(32.dp),
+                    shape = RoundedCornerShape(20.dp),
                     colors = CardDefaults.cardColors(
-                        containerColor = cardGlassColor
+                        containerColor = surfaceElevatedColor
                     ),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
+                    elevation = CardDefaults.cardElevation(
+                        defaultElevation = 16.dp,
+                        pressedElevation = 20.dp,
+                        focusedElevation = 16.dp,
+                        hoveredElevation = 16.dp,
+                        draggedElevation = 24.dp
+                    )
                 ) {
                     Column(
                         modifier = Modifier
@@ -208,17 +265,17 @@ fun LoginScreen(
                             .padding(28.dp),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        // Vobiz Logo
+                        // Vobiz Logo - Square with rounded corners
                         Surface(
-                            shape = CircleShape,
-                            color = if (isDark) Color(0xFF1E293B) else Color(0xFFE2E8F0),
-                            modifier = Modifier.size(76.dp)
+                            shape = RoundedCornerShape(16.dp),
+                            color = surfaceHoverColor,
+                            modifier = Modifier.size(80.dp)
                         ) {
                             Box(contentAlignment = Alignment.Center) {
                                 Image(
-                                    painter = painterResource(R.drawable.ic_launcher_foreground),
+                                    painter = painterResource(R.drawable.logo),
                                     contentDescription = "Vobiz Logo",
-                                    modifier = Modifier.size(54.dp)
+                                    modifier = Modifier.size(60.dp)
                                 )
                             }
                         }
@@ -229,13 +286,13 @@ fun LoginScreen(
                             text = "Vobiz Dialer",
                             fontSize = 28.sp,
                             fontWeight = FontWeight.Bold,
-                            color = textPrimary
+                            color = textColor
                         )
 
                         Text(
                             text = "Internet Calling Endpoint",
                             fontSize = 14.sp,
-                            color = textSecondary
+                            color = textDimColor
                         )
 
                         Spacer(Modifier.height(28.dp))
@@ -249,17 +306,17 @@ fun LoginScreen(
                                     Icon(
                                         imageVector = Icons.Default.Email,
                                         contentDescription = null,
-                                        tint = greyAccent
+                                        tint = textDimColor
                                     )
                                 },
                                 singleLine = true,
                                 enabled = !busy,
                                 shape = RoundedCornerShape(18.dp),
                                 colors = OutlinedTextFieldDefaults.colors(
-                                    focusedBorderColor = greyAccent,
+                                    focusedBorderColor = borderStrongColor,
                                     unfocusedBorderColor = borderColor,
-                                    focusedLabelColor = greyAccent,
-                                    cursorColor = greyAccent
+                                    focusedLabelColor = textDimColor,
+                                    cursorColor = primaryColor
                                 ),
                                 keyboardOptions = KeyboardOptions(
                                     keyboardType = KeyboardType.Email,
@@ -273,7 +330,7 @@ fun LoginScreen(
                                 onValueChange = { password = it },
                                 label = stringResource(R.string.vobiz_login_password),
                                 enabled = !busy,
-                                greyAccent = greyAccent,
+                                accentColor = textDimColor,
                                 borderColor = borderColor,
                                 imeAction = ImeAction.Done,
                                 onImeAction = { if (!busy) connect() },
@@ -288,17 +345,17 @@ fun LoginScreen(
                                     Icon(
                                         imageVector = Icons.Default.Person,
                                         contentDescription = null,
-                                        tint = greyAccent
+                                        tint = textDimColor
                                     )
                                 },
                                 singleLine = true,
                                 enabled = !busy,
                                 shape = RoundedCornerShape(18.dp),
                                 colors = OutlinedTextFieldDefaults.colors(
-                                    focusedBorderColor = greyAccent,
+                                    focusedBorderColor = borderStrongColor,
                                     unfocusedBorderColor = borderColor,
-                                    focusedLabelColor = greyAccent,
-                                    cursorColor = greyAccent
+                                    focusedLabelColor = textDimColor,
+                                    cursorColor = primaryColor
                                 ),
                                 keyboardOptions = KeyboardOptions(
                                     keyboardType = KeyboardType.Ascii,
@@ -312,7 +369,7 @@ fun LoginScreen(
                                 onValueChange = { sipPassword = it },
                                 label = stringResource(R.string.vobiz_login_sip_password),
                                 enabled = !busy,
-                                greyAccent = greyAccent,
+                                accentColor = textDimColor,
                                 borderColor = borderColor,
                                 imeAction = ImeAction.Next,
                             )
@@ -325,17 +382,17 @@ fun LoginScreen(
                                     Icon(
                                         imageVector = Icons.Default.Phone,
                                         contentDescription = null,
-                                        tint = greyAccent
+                                        tint = textDimColor
                                     )
                                 },
                                 singleLine = true,
                                 enabled = !busy,
                                 shape = RoundedCornerShape(18.dp),
                                 colors = OutlinedTextFieldDefaults.colors(
-                                    focusedBorderColor = greyAccent,
+                                    focusedBorderColor = borderStrongColor,
                                     unfocusedBorderColor = borderColor,
-                                    focusedLabelColor = greyAccent,
-                                    cursorColor = greyAccent
+                                    focusedLabelColor = textDimColor,
+                                    cursorColor = primaryColor
                                 ),
                                 keyboardOptions = KeyboardOptions(
                                     keyboardType = KeyboardType.Uri,
@@ -347,7 +404,7 @@ fun LoginScreen(
                             Text(
                                 stringResource(R.string.vobiz_login_transport),
                                 style = MaterialTheme.typography.labelMedium,
-                                color = textSecondary,
+                                color = textDimColor,
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .padding(bottom = 6.dp)
@@ -374,14 +431,14 @@ fun LoginScreen(
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
                             TextButton(onClick = { manualMode = !manualMode }, enabled = !busy) {
-                                Icon(Icons.Default.Phone, contentDescription = null, modifier = Modifier.size(18.dp), tint = greyAccent)
+                                Icon(Icons.Default.Phone, contentDescription = null, modifier = Modifier.size(18.dp), tint = textDimColor)
                                 Spacer(Modifier.width(6.dp))
                                 Text(
                                     stringResource(
                                         if (manualMode) R.string.vobiz_login_use_account
                                         else R.string.vobiz_login_use_sip
                                     ),
-                                    color = greyAccent,
+                                    color = textDimColor,
                                     fontWeight = FontWeight.SemiBold
                                 )
                             }
@@ -391,11 +448,11 @@ fun LoginScreen(
                                 enabled = !busy,
                                 modifier = Modifier.padding(top = 2.dp)
                             ) {
-                                Icon(Icons.Default.Settings, contentDescription = null, modifier = Modifier.size(18.dp), tint = greyAccent)
+                                Icon(Icons.Default.Settings, contentDescription = null, modifier = Modifier.size(18.dp), tint = textDimColor)
                                 Spacer(Modifier.width(6.dp))
                                 Text(
                                     stringResource(R.string.vobiz_login_advanced),
-                                    color = greyAccent
+                                    color = textDimColor
                                 )
                             }
                         }
@@ -412,10 +469,10 @@ fun LoginScreen(
                                     enabled = !busy,
                                     shape = RoundedCornerShape(18.dp),
                                     colors = OutlinedTextFieldDefaults.colors(
-                                        focusedBorderColor = greyAccent,
+                                        focusedBorderColor = borderStrongColor,
                                         unfocusedBorderColor = borderColor,
-                                        focusedLabelColor = greyAccent,
-                                        cursorColor = greyAccent
+                                        focusedLabelColor = textDimColor,
+                                        cursorColor = primaryColor
                                     ),
                                     keyboardOptions = KeyboardOptions(
                                         keyboardType = KeyboardType.Ascii,
@@ -429,7 +486,7 @@ fun LoginScreen(
                                     onValueChange = { authToken = it },
                                     label = stringResource(R.string.vobiz_login_auth_token),
                                     enabled = !busy,
-                                    greyAccent = greyAccent,
+                                    accentColor = textDimColor,
                                     borderColor = borderColor,
                                     imeAction = ImeAction.Next,
                                 )
@@ -448,12 +505,12 @@ fun LoginScreen(
                                             text = "Advanced — Outbound Trunk (optional)",
                                             style = MaterialTheme.typography.labelMedium,
                                             fontWeight = FontWeight.Bold,
-                                            color = greyAccent
+                                            color = textDimColor
                                         )
                                         Text(
                                             text = if (showTrunkSection) "▲ Hide" else "▼ Expand",
                                             style = MaterialTheme.typography.labelSmall,
-                                            color = textSecondary
+                                            color = textDimColor
                                         )
                                     }
                                 }
@@ -470,10 +527,10 @@ fun LoginScreen(
                                             enabled = !busy,
                                             shape = RoundedCornerShape(18.dp),
                                             colors = OutlinedTextFieldDefaults.colors(
-                                                focusedBorderColor = greyAccent,
+                                                focusedBorderColor = borderStrongColor,
                                                 unfocusedBorderColor = borderColor,
-                                                focusedLabelColor = greyAccent,
-                                                cursorColor = greyAccent
+                                                focusedLabelColor = textDimColor,
+                                                cursorColor = primaryColor
                                             ),
                                             keyboardOptions = KeyboardOptions(
                                                 keyboardType = KeyboardType.Ascii,
@@ -487,7 +544,7 @@ fun LoginScreen(
                                             onValueChange = { trunkPassword = it },
                                             label = "Trunk Password",
                                             enabled = !busy,
-                                            greyAccent = greyAccent,
+                                            accentColor = textDimColor,
                                             borderColor = borderColor,
                                             imeAction = ImeAction.Next,
                                         )
@@ -501,10 +558,10 @@ fun LoginScreen(
                                             enabled = !busy,
                                             shape = RoundedCornerShape(18.dp),
                                             colors = OutlinedTextFieldDefaults.colors(
-                                                focusedBorderColor = greyAccent,
+                                                focusedBorderColor = borderStrongColor,
                                                 unfocusedBorderColor = borderColor,
-                                                focusedLabelColor = greyAccent,
-                                                cursorColor = greyAccent
+                                                focusedLabelColor = textDimColor,
+                                                cursorColor = primaryColor
                                             ),
                                             keyboardOptions = KeyboardOptions(
                                                 keyboardType = KeyboardType.Uri,
@@ -516,7 +573,7 @@ fun LoginScreen(
                                         Text(
                                             text = "Enter these to route outbound calls through your Vobiz trunk. Leave blank to use the registrar default.",
                                             style = MaterialTheme.typography.bodySmall,
-                                            color = textSecondary,
+                                            color = textDimColor,
                                             fontSize = 11.sp,
                                             modifier = Modifier.padding(horizontal = 4.dp)
                                         )
@@ -527,32 +584,34 @@ fun LoginScreen(
 
                         Spacer(Modifier.height(24.dp))
 
-                        // Connect Button in Grey / Accent styling
+                        // Connect Button with theme colors and animation
                         Button(
                             onClick = { connect() },
                             enabled = !busy,
                             shape = RoundedCornerShape(20.dp),
                             colors = ButtonDefaults.buttonColors(
-                                containerColor = greyAccent,
-                                contentColor = Color(0xFF0F0F0F)
+                                containerColor = buttonPrimaryColor,
+                                contentColor = buttonOnPrimaryColor
                             ),
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .height(56.dp)
                         ) {
-                            if (busy) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(24.dp),
-                                    color = Color(0xFF0F0F0F),
-                                    strokeWidth = 2.5.dp
-                                )
-                            } else {
-                                Text(
-                                    stringResource(R.string.vobiz_login_connect),
-                                    fontSize = 17.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = Color(0xFF0F0F0F)
-                                )
+                            Crossfade(targetState = busy) { target ->
+                                if (target) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(24.dp),
+                                        color = buttonOnPrimaryColor,
+                                        strokeWidth = 2.5.dp
+                                    )
+                                } else {
+                                    Text(
+                                        stringResource(R.string.vobiz_login_connect),
+                                        fontSize = 17.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = buttonOnPrimaryColor
+                                    )
+                                }
                             }
                         }
 
@@ -561,16 +620,31 @@ fun LoginScreen(
                             TextButton(onClick = onLoggedIn, enabled = !busy) {
                                 Text(
                                     stringResource(R.string.vobiz_login_skip),
-                                    color = textSecondary
+                                    color = textDimColor
                                 )
                             }
                         }
 
                         AnimatedVisibility(visible = state != LoginUiState.Idle) {
-                            StatusCard(
+                            LoginStatusPopup(
                                 state = state,
                                 step = step,
                                 onRetry = { viewModel.onRetry() },
+                                onDismiss = { viewModel.onRetry() },
+                                primaryColor = primaryColor,
+                                onPrimaryColor = onPrimaryColor,
+                                surfaceColor = surfaceColor,
+                                surfaceElevatedColor = surfaceElevatedColor,
+                                textColor = textColor,
+                                textDimColor = textDimColor,
+                                borderColor = borderColor,
+                                borderStrongColor = borderStrongColor,
+                                successColor = successColor,
+                                successBgColor = successBgColor,
+                                dangerColor = dangerColor,
+                                dangerBgColor = dangerBgColor,
+                                warningColor = warningColor,
+                                warningBgColor = warningBgColor,
                             )
                         }
                     }
@@ -674,7 +748,7 @@ private fun SecretTextField(
     onValueChange: (String) -> Unit,
     label: String,
     enabled: Boolean,
-    greyAccent: Color,
+    accentColor: Color,
     borderColor: Color,
     imeAction: ImeAction = ImeAction.Done,
     onImeAction: (() -> Unit)? = null,
@@ -688,17 +762,17 @@ private fun SecretTextField(
             Icon(
                 imageVector = Icons.Default.Lock,
                 contentDescription = null,
-                tint = greyAccent
+                tint = accentColor
             )
         },
         singleLine = true,
         enabled = enabled,
         shape = RoundedCornerShape(18.dp),
         colors = OutlinedTextFieldDefaults.colors(
-            focusedBorderColor = greyAccent,
+            focusedBorderColor = accentColor,
             unfocusedBorderColor = borderColor,
-            focusedLabelColor = greyAccent,
-            cursorColor = greyAccent
+            focusedLabelColor = accentColor,
+            cursorColor = accentColor
         ),
         visualTransformation = if (visible) VisualTransformation.None
         else PasswordVisualTransformation(),
@@ -711,7 +785,7 @@ private fun SecretTextField(
                         if (visible) R.string.vobiz_login_hide_password
                         else R.string.vobiz_login_show_password
                     ),
-                    tint = greyAccent
+                    tint = accentColor
                 )
             }
         },
@@ -725,4 +799,141 @@ private fun SecretTextField(
         ),
         modifier = Modifier.fillMaxWidth()
     )
+}
+
+@Composable
+private fun LoginStatusPopup(
+    state: LoginUiState,
+    step: String,
+    onRetry: () -> Unit,
+    onDismiss: () -> Unit,
+    primaryColor: Color,
+    onPrimaryColor: Color,
+    surfaceColor: Color,
+    surfaceElevatedColor: Color,
+    textColor: Color,
+    textDimColor: Color,
+    borderColor: Color,
+    borderStrongColor: Color,
+    successColor: Color,
+    successBgColor: Color,
+    dangerColor: Color,
+    dangerBgColor: Color,
+    warningColor: Color,
+    warningBgColor: Color,
+) {
+    Box(modifier = Modifier.fillMaxSize()) {
+        // Dimmed overlay - tap to dismiss
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.5f))
+                .clickable { onDismiss() },
+            contentAlignment = Alignment.Center
+        ) {
+            // Empty content - just for overlay tap handling
+        }
+
+        // Popup card
+        AnimatedVisibility(
+            visible = true,
+            enter = fadeIn(animationSpec = spring(stiffness = Spring.StiffnessMedium)) +
+                    slideInVertically(
+                        initialOffsetY = { -it / 6 },
+                        animationSpec = spring(stiffness = Spring.StiffnessMedium)
+                    ),
+            exit = fadeOut(animationSpec = spring(stiffness = Spring.StiffnessMedium)) +
+                    slideOutVertically(
+                        targetOffsetY = { -it / 6 },
+                        animationSpec = spring(stiffness = Spring.StiffnessMedium)
+                    )
+        ) {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 24.dp),
+                shape = RoundedCornerShape(20.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = surfaceElevatedColor
+                ),
+                elevation = CardDefaults.cardElevation(defaultElevation = 24.dp)
+            ) {
+                Column(
+                    modifier = Modifier.padding(24.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    when (state) {
+                        is LoginUiState.Validating, is LoginUiState.Registering -> {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(48.dp),
+                                color = primaryColor,
+                                strokeWidth = 3.dp
+                            )
+                            Spacer(Modifier.height(16.dp))
+                            Text(
+                                stringResource(
+                                    if (state is LoginUiState.Validating) R.string.vobiz_status_validating
+                                    else R.string.vobiz_status_registering
+                                ),
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = textColor
+                            )
+                            if (step.isNotBlank()) {
+                                Spacer(Modifier.height(8.dp))
+                                Text(
+                                    step,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = textDimColor,
+                                    textAlign = TextAlign.Center
+                                )
+                            }
+                        }
+
+                        is LoginUiState.Success -> {
+                            Icon(
+                                imageVector = Icons.Default.CheckCircle,
+                                contentDescription = null,
+                                modifier = Modifier.size(64.dp),
+                                tint = successColor
+                            )
+                            Spacer(Modifier.height(16.dp))
+                            Text(
+                                stringResource(R.string.vobiz_status_success),
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = successColor
+                            )
+                        }
+
+                        is LoginUiState.Failure -> {
+                            Icon(
+                                imageVector = Icons.Default.Error,
+                                contentDescription = null,
+                                modifier = Modifier.size(64.dp),
+                                tint = dangerColor
+                            )
+                            Spacer(Modifier.height(16.dp))
+                            Text(
+                                state.message,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = dangerColor,
+                                textAlign = TextAlign.Center
+                            )
+                            Spacer(Modifier.height(16.dp))
+                            TextButton(onClick = onRetry) {
+                                Text(
+                                    stringResource(R.string.vobiz_status_retry),
+                                    color = dangerColor,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+
+                        LoginUiState.Idle -> Unit
+                    }
+                }
+            }
+        }
+    }
 }
